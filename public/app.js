@@ -1,6 +1,7 @@
 const clockEl = document.getElementById('clock');
 const updatedEl = document.getElementById('updated');
 const boardEl = document.getElementById('board');
+const subtitleEl = document.getElementById('subtitle');
 
 const API = '/api/changes';
 const REFRESH_MS = 5 * 60 * 1000; // 5 minutes
@@ -35,7 +36,17 @@ async function load() {
     const r = await fetch(API);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
+    const prepFrom = new Date(data.filters.prepFrom);
+    const prepTo = new Date(data.filters.prepTo);
 
+    // Compact subtitle formatting
+    const prepFromStr = prepFrom.toLocaleDateString('en-US', { month: 'short', day: 'numeric'});
+    const prepToStr = prepTo.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const eventDays = data.filters.eventDaysBack + 1;
+
+    subtitleEl.textContent =
+        `Showing changes made in the last ${eventDays} days ` +
+        `to shows with prep dates between ${prepFromStr} – ${prepToStr}`;   
     updatedEl.textContent = `Updated ${fmtDate(data.asOf)}`;
 
     const entries = Object.entries(data.grouped)

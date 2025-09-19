@@ -149,9 +149,14 @@ app.get('/api/changes', async (req, res) => {
     console.log('Sample row:', display[0]);
 
     res.json({
-      asOf: new Date().toISOString(),
-      count: display.length,
-      grouped
+        asOf: new Date().toISOString(),
+        count: display.length,
+        grouped,
+        filters: {
+            eventDaysBack: EVENT_DAYS_BACK,
+            prepFrom: prepFrom.toISOString(),
+            prepTo: prepTo.toISOString()
+        }
     });
   } catch (err) {
     console.error(err);
