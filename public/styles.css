@@ -65,3 +65,18 @@ header {
 
 .loading { color: var(--muted); }
 footer { position: fixed; bottom: 10px; right: 14px; color: var(--muted); font-size: 12px; }
+
+.note-added { color: #70e870 !important; font-weight: 700; }
+.note-changed { color: #ffd860 !important; font-weight: 700; }
+.note-deleted { color: #ff6b6b !important; font-weight: 700; }
+
+.legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 6px;
+}
+
+.legend-item {
+  font-size: 14px;
+  font-weight: 600;
+}

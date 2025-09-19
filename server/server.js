@@ -28,23 +28,17 @@ function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate()+n); return
 
 // --- Heuristics for Set / Dept / Item (refine later if IE exposes real fields) ---
 function extractItemFromNote(note = '') {
-  // Try to capture product name after "Added"/"Delete"/"Updated"/"Product Update"
-  const m = note.match(/(?:Product Update:\s*)?(?:Added|Delete|Updated|Change(?:d)?):?\s*(.+?)(?:[.,]|$)/i);
-  return m ? m[1].trim() : note;
+  const text = String(note || '');
+
+  // Match: "Product Update: Added|Deleted|Update|Updated|Change|Changed ..."
+  const m = text.match(/(?:Product Update:\s*)?(Added|Deleted|Update(?:d)?|Change(?:d)?):?\s*(.+)/i);
+  if (m) {
+    return { verb: m[1].toLowerCase(), item: m[2].trim() };
+  }
+
+  return { verb: null, item: text.trim() };
 }
-function inferDepartment(note = '') {
-  const n = note.toLowerCase();
-  if (/(hdmi|sdvoe|matrix|router|switcher|ndi|led wall|projector|camera|video)/.test(n)) return 'Video';
-  if (/(mic|console|speaker|line array|audio|dsp|smaart)/.test(n)) return 'Audio';
-  if (/(dmx|par|ellipsoidal|fixture|moving light|dimmer|lighting)/.test(n)) return 'Lighting';
-  if (/(deck|scenic|drape|truss|rigging|set)/.test(n)) return 'Scenic';
-  return 'General';
-}
-function inferSetName(note = '') {
-  // Optional: look for "Set: <name>"
-  const m = note.match(/\bset:\s*([^.,\n]+)/i);
-  return m ? m[1].trim() : '';
-}
+
 
 // --- Fetch one page from IE ---
 async function fetchChangeLogPage(pageNumber, eventFrom, prepFrom, prepTo) {
@@ -136,22 +130,36 @@ app.get('/api/changes', async (req, res) => {
       return todayInWindow && changedSince;
     });
 
-    // Map to display model
-    const display = visible.map(v => {
-      const show = v.orgName || v.clientName || `Job ${v.orderId}`;
-      const setName = inferSetName(v.note);
-      const department = inferDepartment(v.note);
-      const item = extractItemFromNote(v.note);
-      return {
-        show,
-        orderId: v.orderId,
-        item,
-        changeBy: v.changeBy,
-        eventDate: v.eventDate,
-        note: v.note,
-        prepDate: v.beginDate1,
-        returnDate: v.beginDate3_5
-      };
+    //drop "labor" and "price*" notes
+    const filtered = visible.filter(v => {
+        const note = (v.note || '').toLowerCase();
+
+  // match "labor" as a whole word (avoids "collaborate")
+  if (/\blabor\b/i.test(note)) return false;
+
+  // match "price", "prices", "pricing", "priced" (but not "apricot")
+  if (/\bprice\w*/i.test(note)) return false;
+
+  return true;
+});
+
+    // Build display objects from filtered results
+    const display = filtered.map(v => {
+        const { verb, item } = extractItemFromNote(v.note);
+
+        const show = v.orgName || v.clientName || `Job ${v.orderId}`;
+
+        return {
+            show,
+            orderId: v.orderId,
+            item,
+            verb,
+            changeBy: v.changeBy,
+            eventDate: v.eventDate,
+            note: v.note,
+            prepDate: v.beginDate1,
+            returnDate: v.beginDate3_5
+        };
     });
 
     // Group by show for convenience (front-end can ignore/group again if desired)
@@ -159,6 +167,8 @@ app.get('/api/changes', async (req, res) => {
     for (const d of display) {
       (grouped[d.show] ||= []).push(d);
     }
+
+    console.log('Sample row:', display[0]);
 
     res.json({
       asOf: new Date().toISOString(),

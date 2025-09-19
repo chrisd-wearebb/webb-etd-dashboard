@@ -7,15 +7,24 @@ const REFRESH_MS = 5 * 60 * 1000; // 5 minutes
 
 function fmtDate(d) {
   const dt = new Date(d);
-  return dt.toLocaleString('en-US', { timeZone: 'America/Denver', hour: '2-digit', minute: '2-digit', month: 'short', day: '2-digit' });
+  return dt.toLocaleString('en-US', {
+    timeZone: 'America/Denver',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'short',
+    day: '2-digit'
+  });
 }
 
 function tickClock() {
   const now = new Date();
   clockEl.textContent = now.toLocaleString('en-US', {
     timeZone: 'America/Denver',
-    weekday: 'short', month: 'short', day: '2-digit',
-    hour: '2-digit', minute: '2-digit'
+    weekday: 'short',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
   });
 }
 setInterval(tickClock, 1000);
@@ -30,7 +39,7 @@ async function load() {
     updatedEl.textContent = `Updated ${fmtDate(data.asOf)}`;
 
     const entries = Object.entries(data.grouped)
-      .sort(([a],[b]) => a.localeCompare(b));
+      .sort(([a], [b]) => a.localeCompare(b));
 
     if (entries.length === 0) {
       boardEl.innerHTML = `<div class="loading">No changes in the current windows. Go forth and be calm.</div>`;
@@ -38,25 +47,34 @@ async function load() {
     }
 
     boardEl.innerHTML = entries.map(([show, rows]) => {
-        rows.sort((a,b) =>
-            (a.eventDate || '').localeCompare(b.eventDate || '')
-        );
+      rows.sort((a, b) =>
+        (a.eventDate || '').localeCompare(b.eventDate || '')
+      );
 
-        const headerBadge = `<span class="badge">#${rows[0].orderId}</span>`;
-        const body = rows.map(r => `
-            <div class="row">
-                <div class="item">${escapeHtml(r.item)}</div>
-                <div class="change">${escapeHtml(r.changeBy)}</div>
-                <div class="time">${fmtDate(r.eventDate)}</div>
-            </div>
-        `).join('');
+      const headerBadge = `<span class="badge">#${rows[0].orderId}</span>`;
+      const body = rows.map(r => {
+        // decide color class based on verb
+        const verb = (r.verb || '').toLowerCase();
+        const itemClass =
+            verb === 'added' ? 'note-added' :
+            (verb === 'updated' || verb === 'update' || verb === 'changed' || verb === 'change') ? 'note-changed' :
+            verb === 'deleted' ? 'note-deleted' : '';
 
-    return `
+        return `
+          <div class="row">
+            <div class="item ${itemClass}">${escapeHtml(r.item)}</div>
+            <div class="change">${escapeHtml(r.changeBy)}</div>
+            <div class="time">${fmtDate(r.eventDate)}</div>
+          </div>
+        `;
+      }).join('');
+
+      return `
         <section class="group">
-            <h2>${escapeHtml(show)} ${headerBadge}</h2>
-            ${body}
+          <h2>${escapeHtml(show)} ${headerBadge}</h2>
+          ${body}
         </section>
-    `;
+      `;
     }).join('');
 
   } catch (e) {
@@ -65,8 +83,13 @@ async function load() {
   }
 }
 
-function escapeHtml(s='') {
-  return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function escapeHtml(s = '') {
+  return s.replace(/[&<>"]/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;'
+  }[c]));
 }
 
 load();
