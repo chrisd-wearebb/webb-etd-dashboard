@@ -23,32 +23,34 @@ const PREP_DAYS_PAST = Number(process.env.PREP_DAYS_PAST || 30);
 const PREP_DAYS_FUTURE = Number(process.env.PREP_DAYS_FUTURE || 60);
 
 function iso(d) { return new Date(d).toISOString(); }
-function startOfDay(d) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
-function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate()+n); return x; }
+function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+function endOfDay(d) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 
 // --- Heuristics for Set / Dept / Item (refine later if IE exposes real fields) ---
 function extractItemFromNote(note = '') {
   const text = String(note || '');
-
-  // Match: "Product Update: Added|Deleted|Update|Updated|Change|Changed ..."
   const m = text.match(/(?:Product Update:\s*)?(Added|Deleted|Update(?:d)?|Change(?:d)?):?\s*(.+)/i);
   if (m) {
     return { verb: m[1].toLowerCase(), item: m[2].trim() };
   }
-
   return { verb: null, item: text.trim() };
 }
 
-
 // --- Fetch one page from IE ---
-async function fetchChangeLogPage(pageNumber, eventFrom, prepFrom, prepTo) {
+async function fetchChangeLogPage(pageNumber, eventFrom, eventTo, prepFrom, prepTo) {
   const url = `${BASE}/api/v1/Reports/General/GlobalChangeLogReport/List`;
 
   const filterItems = [
-    // event_date: After eventFrom
-    { id: -2147483648, fieldId: 'event_date', condition: 0, criteria1: iso(eventFrom) },
-    // ChangeType: Inventory (2)
-    { id: -2147483648, fieldId: '_ChangeType', condition: 0, criteria1: '2' },
+    {
+      id: -2147483648,
+      fieldId: 'event_date',
+      condition: 2, // Between
+      criteria1: iso(eventFrom),
+      negate: false,
+      criteria2: iso(eventTo)
+    },
+    { id: -2147483648, fieldId: '_ChangeType', condition: 0, criteria1: '2' }
   ];
 
   if (OFFICE_IDS.length) {
@@ -61,7 +63,7 @@ async function fetchChangeLogPage(pageNumber, eventFrom, prepFrom, prepTo) {
       id: -2147483648, fieldId: 'job_type_id', condition: 0, criteria1: JOB_TYPE_IDS.join(',')
     });
   }
-  // Limit prep date window for performance (Between)
+
   filterItems.push({
     id: -2147483648, fieldId: 'begin_date1', condition: 2,
     criteria1: iso(prepFrom), negate: false, criteria2: iso(prepTo)
@@ -75,7 +77,8 @@ async function fetchChangeLogPage(pageNumber, eventFrom, prepFrom, prepTo) {
     groupSortAscending: true,
     filterItems,
     displayedProperties: [
-      'OrderId','JobType','BeginDate1','BeginDate3_5','ChangeBy','EventDate','Note','ClientName','JobTotal','BalanceDue'
+      'OrderId', 'JobType', 'BeginDate1', 'BeginDate3_5', 'ChangeBy', 'EventDate',
+      'Note', 'ClientName', 'JobTotal', 'BalanceDue'
     ],
     recordCountPerPage: PAGE_SIZE
   };
@@ -86,8 +89,8 @@ async function fetchChangeLogPage(pageNumber, eventFrom, prepFrom, prepTo) {
 
   const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
   if (!r.ok) {
-    const txt = await r.text().catch(()=> '');
-    const err = new Error(`IE API ${r.status} ${r.statusText} – ${txt.slice(0,200)}`);
+    const txt = await r.text().catch(() => '');
+    const err = new Error(`IE API ${r.status} ${r.statusText} – ${txt.slice(0, 200)}`);
     err.status = r.status;
     throw err;
   }
@@ -99,70 +102,45 @@ app.get('/api/changes', async (req, res) => {
   try {
     const now = startOfDay(new Date());
     const eventFrom = addDays(now, -EVENT_DAYS_BACK);
-    const prepFrom = addDays(now, -PREP_DAYS_PAST);
-    const prepTo = addDays(now, PREP_DAYS_FUTURE);
+    const eventTo = endOfDay(now);
+    const prepFrom = addDays(startOfDay(now), -PREP_DAYS_PAST);
+    const prepTo = addDays(startOfDay(now), PREP_DAYS_FUTURE);
 
-    // Paginate
+    // Paginate through IE API
     let page = 1;
     let totalPages = 1;
     const all = [];
     do {
-      const data = await fetchChangeLogPage(page, eventFrom, prepFrom, prepTo);
+      const data = await fetchChangeLogPage(page, eventFrom, eventTo, prepFrom, prepTo);
       totalPages = data.totalPageCount || 1;
       (data.items || []).forEach(it => all.push(it));
       page += 1;
     } while (page <= totalPages);
 
-    // Apply your exact visibility rules client-side:
-    // Show an item if "today" ∈ [prep - 3, return] AND eventDate >= (prep - 3)
-    const visible = all.filter(row => {
-      const prep = row.beginDate1 ? new Date(row.beginDate1) : null;
-      const ret = row.beginDate3_5 ? new Date(row.beginDate3_5) : null;
-      const eventAt = row.eventDate ? new Date(row.eventDate) : null;
-      if (!prep || !eventAt || !ret) return false;
-
-      const prepMinus3 = addDays(startOfDay(prep), -3);
-      const today = now;
-
-      const todayInWindow = today >= prepMinus3 && today <= ret;
-      const changedSince = eventAt >= prepMinus3;
-
-      return todayInWindow && changedSince;
+    // Only drop unwanted notes ("labor", "price")
+    const filtered = all.filter(v => {
+      const note = (v.note || '').toLowerCase();
+      if (/\\blabor\\b/i.test(note)) return false;
+      if (/\\bprice\\w*/i.test(note)) return false;
+      return true;
     });
 
-    //drop "labor" and "price*" notes
-    const filtered = visible.filter(v => {
-        const note = (v.note || '').toLowerCase();
-
-  // match "labor" as a whole word (avoids "collaborate")
-  if (/\blabor\b/i.test(note)) return false;
-
-  // match "price", "prices", "pricing", "priced" (but not "apricot")
-  if (/\bprice\w*/i.test(note)) return false;
-
-  return true;
-});
-
-    // Build display objects from filtered results
     const display = filtered.map(v => {
-        const { verb, item } = extractItemFromNote(v.note);
-
-        const show = v.orgName || v.clientName || `Job ${v.orderId}`;
-
-        return {
-            show,
-            orderId: v.orderId,
-            item,
-            verb,
-            changeBy: v.changeBy,
-            eventDate: v.eventDate,
-            note: v.note,
-            prepDate: v.beginDate1,
-            returnDate: v.beginDate3_5
-        };
+      const { verb, item } = extractItemFromNote(v.note);
+      const show = v.orgName || v.clientName || `Job ${v.orderId}`;
+      return {
+        show,
+        orderId: v.orderId,
+        item,
+        verb,
+        changeBy: v.changeBy,
+        eventDate: v.eventDate,
+        note: v.note,
+        prepDate: v.beginDate1,
+        returnDate: v.beginDate3_5
+      };
     });
 
-    // Group by show for convenience (front-end can ignore/group again if desired)
     const grouped = {};
     for (const d of display) {
       (grouped[d.show] ||= []).push(d);
