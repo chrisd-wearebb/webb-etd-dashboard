@@ -53,7 +53,7 @@ async function load() {
     const eventDays = data.filters.eventDaysBack + 1;
     subtitleEl.textContent =
       `Showing changes made in the last ${eventDays} days ` +
-      `with Prep dates between ${prepFromStr} – ${prepToStr}`;
+      `to shows with prep dates between ${prepFromStr} – ${prepToStr}`;
 
     updatedEl.textContent = `Updated ${fmtDate(data.asOf)}`;
 

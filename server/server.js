@@ -27,14 +27,37 @@ function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x
 function endOfDay(d) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 
-// --- Heuristics for Set / Dept / Item (refine later if IE exposes real fields) ---
+// --- Heuristics for item + verb from the note ---
 function extractItemFromNote(note = '') {
-  const text = String(note || '');
-  const m = text.match(/(?:Product Update:\s*)?(Added|Deleted|Update(?:d)?|Change(?:d)?):?\s*(.+)/i);
+  const text = String(note || '').trim();
+
+  // 1) Prefer verbs at the start (after optional prefixes like "Product Update:" or "Product Copy:")
+  const m = text.match(
+    /^(?:Product\s+(?:Update|Copy)\s*:\s*)?\s*(Added?|Deleted?|Updated?|Changed?|Add|Delete|Update|Change)\s*:?\s*(.+)$/i
+  );
   if (m) {
-    return { verb: m[1].toLowerCase(), item: m[2].trim() };
+    let verb = m[1].toLowerCase();
+    // normalize to the forms your CSS expects
+    if (verb.startsWith('add')) verb = 'added';
+    else if (verb.startsWith('delete')) verb = 'deleted';
+    else if (verb.startsWith('update')) verb = 'updated';
+    else if (verb.startsWith('change')) verb = 'changed';
+    return { verb, item: m[2].trim() };
   }
-  return { verb: null, item: text.trim() };
+
+  // 2) Fallback: if a verb appears anywhere in the text, still set a verb so it can colorize
+  const anywhere = text.match(/\b(added?|deleted?|updated?|changed?)\b/i);
+  if (anywhere) {
+    let verb = anywhere[1].toLowerCase();
+    if (verb.startsWith('add')) verb = 'added';
+    else if (verb.startsWith('delete')) verb = 'deleted';
+    else if (verb.startsWith('update')) verb = 'updated';
+    else if (verb.startsWith('change')) verb = 'changed';
+    return { verb, item: text };
+  }
+
+  // 3) Nothing matched: return raw text, no verb (renders neutral)
+  return { verb: null, item: text };
 }
 
 // --- Fetch one page from IE ---
@@ -120,8 +143,8 @@ app.get('/api/changes', async (req, res) => {
     // Only drop unwanted notes ("labor", "price")
     const filtered = all.filter(v => {
       const note = (v.note || '').toLowerCase();
-      if (/\\blabor\\b/i.test(note)) return false;
-      if (/\\bprice\\w*/i.test(note)) return false;
+      if (/(^labor\b|labor\b|labor\s*[-:])/i.test(note)) return false;
+      if (/(^price\b|price\b|price\s*[-:])/i.test(note)) return false;
       return true;
     });
 
