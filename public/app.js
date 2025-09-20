@@ -39,14 +39,22 @@ async function load() {
     const prepFrom = new Date(data.filters.prepFrom);
     const prepTo = new Date(data.filters.prepTo);
 
-    // Compact subtitle formatting
-    const prepFromStr = prepFrom.toLocaleDateString('en-US', { month: 'short', day: 'numeric'});
-    const prepToStr = prepTo.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    const eventDays = data.filters.eventDaysBack + 1;
+    const prepFromStr = prepFrom.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+    const prepToStr = prepTo.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
 
+    const eventDays = data.filters.eventDaysBack + 1;
     subtitleEl.textContent =
-        `Showing changes made in the last ${eventDays} days ` +
-        `to shows with prep dates between ${prepFromStr} – ${prepToStr}`;   
+      `Showing changes made in the last ${eventDays} days ` +
+      `with Prep dates between ${prepFromStr} – ${prepToStr}`;
+
     updatedEl.textContent = `Updated ${fmtDate(data.asOf)}`;
 
     const entries = Object.entries(data.grouped)
@@ -57,36 +65,44 @@ async function load() {
       return;
     }
 
-    boardEl.innerHTML = entries.map(([show, rows]) => {
-      rows.sort((a, b) =>
-        (a.eventDate || '').localeCompare(b.eventDate || '')
-      );
+    boardEl.innerHTML = `
+      <div class="grid-board">
+        ${entries.map(([show, rows]) => {
+          rows.sort((a, b) =>
+            (a.eventDate || '').localeCompare(b.eventDate || '')
+          );
 
-      const headerBadge = `<span class="badge">#${rows[0].orderId}</span>`;
-      const body = rows.map(r => {
-        // decide color class based on verb
-        const verb = (r.verb || '').toLowerCase();
-        const itemClass =
-            verb === 'added' ? 'note-added' :
-            (verb === 'updated' || verb === 'update' || verb === 'changed' || verb === 'change') ? 'note-changed' :
-            verb === 'deleted' ? 'note-deleted' : '';
+          const headerBadge = `<span class="badge">#${rows[0].orderId}</span>`;
+          const body = rows.map(r => {
+            const verb = (r.verb || '').toLowerCase();
+            const itemClass =
+              verb === 'added' ? 'note-added' :
+              (verb === 'updated' || verb === 'update' || verb === 'changed' || verb === 'change') ? 'note-changed' :
+              verb === 'deleted' ? 'note-deleted' : '';
 
-        return `
-          <div class="row">
-            <div class="item ${itemClass}">${escapeHtml(r.item)}</div>
-            <div class="change">${escapeHtml(r.changeBy)}</div>
-            <div class="time">${fmtDate(r.eventDate)}</div>
-          </div>
+            return `
+              <div class="row">
+                <div class="item ${itemClass}">${escapeHtml(r.item)}</div>
+                <div class="change">${escapeHtml(r.changeBy)}</div>
+                <div class="time">${fmtDate(r.eventDate)}</div>
+              </div>
+            `;
+          }).join('');
+
+          return `
+            <div class="grid-card">
+                <h2>${escapeHtml(show)} ${headerBadge}</h2>
+                <div class="card-body">
+                ${body}
+                </div>
+            </div>
         `;
-      }).join('');
+        }).join('')}
+      </div>
+    `;
 
-      return `
-        <section class="group">
-          <h2>${escapeHtml(show)} ${headerBadge}</h2>
-          ${body}
-        </section>
-      `;
-    }).join('');
+    // Apply auto-scroll to all cards
+    document.querySelectorAll('.grid-card').forEach(autoScrollCard);
 
   } catch (e) {
     console.error(e);
@@ -101,6 +117,34 @@ function escapeHtml(s = '') {
     '>': '&gt;',
     '"': '&quot;'
   }[c]));
+}
+
+// Auto-scroll function with bounce + pause
+function autoScrollCard(card) {
+  const body = card.querySelector('.card-body');
+  if (!body) return;
+
+  let direction = 1;
+  let speed = 0.5;
+  let paused = false;
+
+  function tick() {
+    if (!paused) {
+      body.scrollTop += speed * direction;
+
+      if (body.scrollTop + body.clientHeight >= body.scrollHeight) {
+        direction = -1;
+        paused = true;
+        setTimeout(() => { paused = false; }, 2000);
+      } else if (body.scrollTop <= 0) {
+        direction = 1;
+        paused = true;
+        setTimeout(() => { paused = false; }, 2000);
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+  tick();
 }
 
 load();
