@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>WEBB - Dashboard Settings</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="header-left">
+        <div class="title">Dashboard Settings</div>
+        <div id="settings-status" class="subtitle"></div>
+      </div>
+      <div class="header-right">
+        <a class="back-link" href="./index.html">Back to dashboard</a>
+      </div>
+    </header>
+
+    <main class="settings-main">
+      <form id="settings-form" class="settings-form">
+        <section class="settings-section">
+          <h2>Time Windows</h2>
+          <div class="settings-grid">
+            <label>
+              <span>Event days back</span>
+              <input name="eventDaysBack" type="number" min="0" max="365" step="1" required>
+            </label>
+            <label>
+              <span>Prep days past</span>
+              <input name="prepDaysPast" type="number" min="0" max="365" step="1" required>
+            </label>
+            <label>
+              <span>Prep days future</span>
+              <input name="prepDaysFuture" type="number" min="0" max="365" step="1" required>
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h2>Data Fetching</h2>
+          <div class="settings-grid">
+            <label>
+              <span>Page size</span>
+              <input name="pageSize" type="number" min="1" max="1000" step="1" required>
+            </label>
+            <label>
+              <span>Refresh seconds</span>
+              <input name="refreshSeconds" type="number" min="30" max="3600" step="1" required>
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h2>Filters</h2>
+          <div class="settings-grid settings-grid-wide">
+            <label>
+              <span>Office IDs</span>
+              <input name="officeIds" type="text" autocomplete="off">
+            </label>
+            <label>
+              <span>Job type IDs</span>
+              <input name="jobTypeIds" type="text" autocomplete="off">
+            </label>
+          </div>
+        </section>
+
+        <div class="settings-actions">
+          <button type="submit">Save settings</button>
+          <a class="secondary-action" href="./index.html">Cancel</a>
+        </div>
+      </form>
+    </main>
+
+    <script src="./settings.js" type="module"></script>
+  </body>
+</html>

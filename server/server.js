@@ -1,29 +1,24 @@
 /* server/server.js */
 import 'dotenv/config';
 import express from 'express';
+import {
+  loadDashboardSettings,
+  saveDashboardSettings,
+  SETTING_LIMITS,
+  validateDashboardSettings
+} from './dashboardSettings.js';
+import { extractItemFromNote } from './noteParser.js';
 
 const app = express();
 app.use(express.json());
-
-// Simple CORS for local dev
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*'); // TV only, not public
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  next();
-});
 
 const BASE = process.env.IE_API_BASE || 'https://webapi2ui.ielightning.net';
 const WEBB_TOKEN_URL = process.env.WEBB_TOKEN_URL || 'https://api.wearewebb.com/token';
 const WEBB_TOKEN_BEARER = process.env.WEBB_TOKEN_BEARER || '';
 const WEBB_TOKEN_REFRESH_BUFFER_MS = Number(process.env.WEBB_TOKEN_REFRESH_BUFFER_MS || 5 * 60 * 1000);
+const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 5050);
-const OFFICE_IDS = (process.env.OFFICE_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-const JOB_TYPE_IDS = (process.env.JOB_TYPE_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-const PAGE_SIZE = Number(process.env.PAGE_SIZE || 500);
-
-const EVENT_DAYS_BACK = Number(process.env.EVENT_DAYS_BACK || 45);
-const PREP_DAYS_PAST = Number(process.env.PREP_DAYS_PAST || 30);
-const PREP_DAYS_FUTURE = Number(process.env.PREP_DAYS_FUTURE || 60);
+let dashboardSettings = await loadDashboardSettings();
 
 function iso(d) { return new Date(d).toISOString(); }
 function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -105,41 +100,8 @@ async function getIeAuthorizationHeader() {
   return bearerHeaderValue(token.accessToken);
 }
 
-// --- Heuristics for item + verb from the note ---
-function extractItemFromNote(note = '') {
-  const text = String(note || '').trim();
-
-  // 1) Prefer verbs at the start (after optional prefixes like "Product Update:" or "Product Copy:")
-  const m = text.match(
-    /^(?:Product\s+(?:Update|Copy)\s*:\s*)?\s*(Added?|Deleted?|Updated?|Changed?|Add|Delete|Update|Change)\s*:?\s*(.+)$/i
-  );
-  if (m) {
-    let verb = m[1].toLowerCase();
-    // normalize to the forms your CSS expects
-    if (verb.startsWith('add')) verb = 'added';
-    else if (verb.startsWith('delete')) verb = 'deleted';
-    else if (verb.startsWith('update')) verb = 'updated';
-    else if (verb.startsWith('change')) verb = 'changed';
-    return { verb, item: m[2].trim() };
-  }
-
-  // 2) Fallback: if a verb appears anywhere in the text, still set a verb so it can colorize
-  const anywhere = text.match(/\b(added?|deleted?|updated?|changed?)\b/i);
-  if (anywhere) {
-    let verb = anywhere[1].toLowerCase();
-    if (verb.startsWith('add')) verb = 'added';
-    else if (verb.startsWith('delete')) verb = 'deleted';
-    else if (verb.startsWith('update')) verb = 'updated';
-    else if (verb.startsWith('change')) verb = 'changed';
-    return { verb, item: text };
-  }
-
-  // 3) Nothing matched: return raw text, no verb (renders neutral)
-  return { verb: null, item: text };
-}
-
 // --- Fetch one page from IE ---
-async function fetchChangeLogPage(pageNumber, eventFrom, eventTo, prepFrom, prepTo) {
+async function fetchChangeLogPage(pageNumber, eventFrom, eventTo, prepFrom, prepTo, settings) {
   const url = `${BASE}/api/v1/Reports/General/GlobalChangeLogReport/List`;
 
   const filterItems = [
@@ -154,14 +116,14 @@ async function fetchChangeLogPage(pageNumber, eventFrom, eventTo, prepFrom, prep
     { id: -2147483648, fieldId: '_ChangeType', condition: 0, criteria1: '2' }
   ];
 
-  if (OFFICE_IDS.length) {
+  if (settings.officeIds.length) {
     filterItems.push({
-      id: -2147483648, fieldId: 'office_id', condition: 0, criteria1: OFFICE_IDS.join(',')
+      id: -2147483648, fieldId: 'office_id', condition: 0, criteria1: settings.officeIds.join(',')
     });
   }
-  if (JOB_TYPE_IDS.length) {
+  if (settings.jobTypeIds.length) {
     filterItems.push({
-      id: -2147483648, fieldId: 'job_type_id', condition: 0, criteria1: JOB_TYPE_IDS.join(',')
+      id: -2147483648, fieldId: 'job_type_id', condition: 0, criteria1: settings.jobTypeIds.join(',')
     });
   }
 
@@ -181,7 +143,7 @@ async function fetchChangeLogPage(pageNumber, eventFrom, eventTo, prepFrom, prep
       'OrderId', 'JobType', 'BeginDate1', 'BeginDate3_5', 'ChangeBy', 'EventDate',
       'Note', 'ClientName', 'JobTotal', 'BalanceDue'
     ],
-    recordCountPerPage: PAGE_SIZE
+    recordCountPerPage: settings.pageSize
   };
 
   const headers = {
@@ -199,21 +161,44 @@ async function fetchChangeLogPage(pageNumber, eventFrom, eventTo, prepFrom, prep
   return r.json();
 }
 
+app.get('/api/settings', (req, res) => {
+  res.json({
+    settings: dashboardSettings,
+    limits: SETTING_LIMITS
+  });
+});
+
+app.put('/api/settings', async (req, res) => {
+  try {
+    const nextSettings = validateDashboardSettings(req.body, dashboardSettings);
+    await saveDashboardSettings(nextSettings);
+    dashboardSettings = nextSettings;
+
+    res.json({
+      settings: dashboardSettings,
+      limits: SETTING_LIMITS
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Invalid settings' });
+  }
+});
+
 // --- Main API: processed list based on your window rules ---
 app.get('/api/changes', async (req, res) => {
   try {
+    const settings = structuredClone(dashboardSettings);
     const now = startOfDay(new Date());
-    const eventFrom = addDays(now, -EVENT_DAYS_BACK);
+    const eventFrom = addDays(now, -settings.eventDaysBack);
     const eventTo = endOfDay(now);
-    const prepFrom = addDays(startOfDay(now), -PREP_DAYS_PAST);
-    const prepTo = addDays(startOfDay(now), PREP_DAYS_FUTURE);
+    const prepFrom = addDays(startOfDay(now), -settings.prepDaysPast);
+    const prepTo = addDays(startOfDay(now), settings.prepDaysFuture);
 
     // Paginate through IE API
     let page = 1;
     let totalPages = 1;
     const all = [];
     do {
-      const data = await fetchChangeLogPage(page, eventFrom, eventTo, prepFrom, prepTo);
+      const data = await fetchChangeLogPage(page, eventFrom, eventTo, prepFrom, prepTo, settings);
       totalPages = data.totalPageCount || 1;
       (data.items || []).forEach(it => all.push(it));
       page += 1;
@@ -248,17 +233,16 @@ app.get('/api/changes', async (req, res) => {
       (grouped[d.show] ||= []).push(d);
     }
 
-    console.log('Sample row:', display[0]);
-
     res.json({
         asOf: new Date().toISOString(),
         count: display.length,
         grouped,
         filters: {
-            eventDaysBack: EVENT_DAYS_BACK,
+            eventDaysBack: settings.eventDaysBack,
             prepFrom: prepFrom.toISOString(),
             prepTo: prepTo.toISOString()
-        }
+        },
+        settings
     });
   } catch (err) {
     console.error(err);
@@ -268,6 +252,11 @@ app.get('/api/changes', async (req, res) => {
 
 app.use(express.static('public')); // serve the dashboard
 
-app.listen(PORT, () => {
-  console.log(`Dashboard running on http://localhost:${PORT}`);
+const server = app.listen(PORT, HOST, () => {
+  console.log(`Dashboard running on http://${HOST}:${PORT}`);
+});
+
+server.on('error', err => {
+  console.error(err);
+  process.exitCode = 1;
 });
