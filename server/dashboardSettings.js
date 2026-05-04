@@ -2,6 +2,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { JOB_TYPE_CODES, OFFICE_CODES } from './referenceCodes.js';
+
 export const SETTINGS_FILE = new URL('../config/dashboard-settings.json', import.meta.url);
 
 export const SETTING_LIMITS = {
@@ -12,7 +14,12 @@ export const SETTING_LIMITS = {
   refreshSeconds: { min: 30, max: 3600 }
 };
 
-export function parseIdList(value) {
+export const SETTING_OPTIONS = {
+  officeNames: OFFICE_CODES.map(option => option.name),
+  jobTypeNames: JOB_TYPE_CODES.map(option => option.name)
+};
+
+export function parseList(value) {
   if (Array.isArray(value)) {
     return value.map(v => String(v).trim()).filter(Boolean);
   }
@@ -30,13 +37,18 @@ export function defaultDashboardSettings(env = process.env) {
     prepDaysFuture: envNumber(env.PREP_DAYS_FUTURE, 60),
     pageSize: envNumber(env.PAGE_SIZE, 500),
     refreshSeconds: envNumber(env.REFRESH_SECONDS, 300),
-    officeIds: parseIdList(env.OFFICE_IDS),
-    jobTypeIds: parseIdList(env.JOB_TYPE_IDS)
+    officeNames: namesFromIds(parseList(env.OFFICE_IDS), OFFICE_CODES),
+    jobTypeNames: namesFromIds(parseList(env.JOB_TYPE_IDS), JOB_TYPE_CODES)
   };
 }
 
 export function validateDashboardSettings(input, base = defaultDashboardSettings()) {
-  const source = { ...base, ...input };
+  const source = {
+    ...base,
+    ...input,
+    officeNames: input?.officeNames ?? namesFromIds(input?.officeIds, OFFICE_CODES) ?? base.officeNames,
+    jobTypeNames: input?.jobTypeNames ?? namesFromIds(input?.jobTypeIds, JOB_TYPE_CODES) ?? base.jobTypeNames
+  };
 
   return {
     eventDaysBack: boundedInteger(source.eventDaysBack, 'Event days back', SETTING_LIMITS.eventDaysBack),
@@ -44,8 +56,15 @@ export function validateDashboardSettings(input, base = defaultDashboardSettings
     prepDaysFuture: boundedInteger(source.prepDaysFuture, 'Prep days future', SETTING_LIMITS.prepDaysFuture),
     pageSize: boundedInteger(source.pageSize, 'Page size', SETTING_LIMITS.pageSize),
     refreshSeconds: boundedInteger(source.refreshSeconds, 'Refresh seconds', SETTING_LIMITS.refreshSeconds),
-    officeIds: parseIdList(source.officeIds),
-    jobTypeIds: parseIdList(source.jobTypeIds)
+    officeNames: validateNames(source.officeNames, 'Office', OFFICE_CODES),
+    jobTypeNames: validateNames(source.jobTypeNames, 'Job type', JOB_TYPE_CODES)
+  };
+}
+
+export function dashboardFilterIds(settings) {
+  return {
+    officeIds: idsFromNames(settings.officeNames, OFFICE_CODES),
+    jobTypeIds: idsFromNames(settings.jobTypeNames, JOB_TYPE_CODES)
   };
 }
 
@@ -80,4 +99,30 @@ function boundedInteger(value, label, { min, max }) {
   }
 
   return parsed;
+}
+
+function namesFromIds(ids, options) {
+  if (ids === undefined) return undefined;
+
+  const optionById = new Map(options.map(option => [option.id, option.name]));
+  return parseList(ids)
+    .map(id => optionById.get(id))
+    .filter(Boolean);
+}
+
+function idsFromNames(names, options) {
+  const optionByName = new Map(options.map(option => [option.name, option.id]));
+  return validateNames(names, 'Filter', options).map(name => optionByName.get(name));
+}
+
+function validateNames(names, label, options) {
+  const validNames = new Set(options.map(option => option.name));
+
+  return parseList(names).map(name => {
+    if (!validNames.has(name)) {
+      throw new Error(`${label} "${name}" is not a valid option.`);
+    }
+
+    return name;
+  });
 }

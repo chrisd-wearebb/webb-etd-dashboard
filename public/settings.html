@@ -56,14 +56,20 @@
         <section class="settings-section">
           <h2>Filters</h2>
           <div class="settings-grid settings-grid-wide">
-            <label>
-              <span>Office IDs</span>
-              <input name="officeIds" type="text" autocomplete="off">
-            </label>
-            <label>
-              <span>Job type IDs</span>
-              <input name="jobTypeIds" type="text" autocomplete="off">
-            </label>
+            <div class="field-group">
+              <span>Offices</span>
+              <details class="checkbox-dropdown">
+                <summary id="office-summary">All offices</summary>
+                <div id="office-options" class="checkbox-list"></div>
+              </details>
+            </div>
+            <div class="field-group">
+              <span>Job types</span>
+              <details class="checkbox-dropdown">
+                <summary id="job-type-summary">All job types</summary>
+                <div id="job-type-options" class="checkbox-list"></div>
+              </details>
+            </div>
           </div>
         </section>
 

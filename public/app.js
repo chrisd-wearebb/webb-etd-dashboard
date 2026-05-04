@@ -152,7 +152,7 @@ function autoScrollCard(card) {
   if (!body || body.scrollHeight <= body.clientHeight) return () => {};
 
   let direction = 1;
-  const speed = 0.5;
+  const speed = 0.4;
   let paused = false;
   let stopped = false;
   let pauseTimeoutId = null;

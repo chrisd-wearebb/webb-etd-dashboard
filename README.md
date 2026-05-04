@@ -72,12 +72,12 @@ Editable settings:
 - Prep days future
 - Page size
 - Refresh seconds
-- Office IDs
-- Job type IDs
+- Offices
+- Job types
 
 The `.env` values are startup defaults. Changes made on the settings page are saved to `config/dashboard-settings.json`, which is ignored by Git. The saved settings take priority on the next server start.
 
-Auth settings are intentionally not editable from the browser.
+Office and job type filters are shown by name in the browser. The server maps those names back to the IntelliEvent IDs when it calls the IE API. Auth settings are intentionally not editable from the browser.
 
 For local development with automatic server restarts:
 
@@ -97,6 +97,7 @@ The current test coverage is intentionally small. It covers the note parsing log
 
 - `server/server.js` - Express app, token-service auth, IntelliEvent API call, filtering, and grouping
 - `server/dashboardSettings.js` - editable dashboard setting defaults, validation, and persistence
+- `server/referenceCodes.js` - office and job type names mapped to IntelliEvent IDs
 - `server/noteParser.js` - changelog note parsing helper
 - `public/app.js` - browser rendering, refresh, clock, and card auto-scroll
 - `public/settings.html` - local settings page

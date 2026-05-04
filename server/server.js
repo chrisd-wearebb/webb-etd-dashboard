@@ -2,9 +2,11 @@
 import 'dotenv/config';
 import express from 'express';
 import {
+  dashboardFilterIds,
   loadDashboardSettings,
   saveDashboardSettings,
   SETTING_LIMITS,
+  SETTING_OPTIONS,
   validateDashboardSettings
 } from './dashboardSettings.js';
 import { extractItemFromNote } from './noteParser.js';
@@ -103,6 +105,7 @@ async function getIeAuthorizationHeader() {
 // --- Fetch one page from IE ---
 async function fetchChangeLogPage(pageNumber, eventFrom, eventTo, prepFrom, prepTo, settings) {
   const url = `${BASE}/api/v1/Reports/General/GlobalChangeLogReport/List`;
+  const filterIds = dashboardFilterIds(settings);
 
   const filterItems = [
     {
@@ -116,14 +119,14 @@ async function fetchChangeLogPage(pageNumber, eventFrom, eventTo, prepFrom, prep
     { id: -2147483648, fieldId: '_ChangeType', condition: 0, criteria1: '2' }
   ];
 
-  if (settings.officeIds.length) {
+  if (filterIds.officeIds.length) {
     filterItems.push({
-      id: -2147483648, fieldId: 'office_id', condition: 0, criteria1: settings.officeIds.join(',')
+      id: -2147483648, fieldId: 'office_id', condition: 0, criteria1: filterIds.officeIds.join(',')
     });
   }
-  if (settings.jobTypeIds.length) {
+  if (filterIds.jobTypeIds.length) {
     filterItems.push({
-      id: -2147483648, fieldId: 'job_type_id', condition: 0, criteria1: settings.jobTypeIds.join(',')
+      id: -2147483648, fieldId: 'job_type_id', condition: 0, criteria1: filterIds.jobTypeIds.join(',')
     });
   }
 
@@ -164,6 +167,7 @@ async function fetchChangeLogPage(pageNumber, eventFrom, eventTo, prepFrom, prep
 app.get('/api/settings', (req, res) => {
   res.json({
     settings: dashboardSettings,
+    options: SETTING_OPTIONS,
     limits: SETTING_LIMITS
   });
 });
@@ -176,6 +180,7 @@ app.put('/api/settings', async (req, res) => {
 
     res.json({
       settings: dashboardSettings,
+      options: SETTING_OPTIONS,
       limits: SETTING_LIMITS
     });
   } catch (err) {
